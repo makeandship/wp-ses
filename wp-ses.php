@@ -508,13 +508,23 @@ function wpses_mail($to, $subject, $message, $headers = '', $attachments = '') {
     } else {
         $message = preg_replace('/<(http:.*)>/', '$1', $message);
         $message = preg_replace('/<(https:.*)>/', '$1', $message); // bad hack - handle httpS as well.
-        $html = $message;
-        $txt = strip_tags($html);
-        if (strlen($html) == strlen($txt)) {
-            $html = ''; // que msg text
+        
+        // support sending an array for message keyed by mime type
+        //
+        // https://core.trac.wordpress.org/ticket/15448
+        if (is_array( $message )) {
+            $html = $message['text/html'];
+            $txt = $message['text/plain'];
         }
-        // no html entity in txt.
-        $txt = html_entity_decode($txt, ENT_NOQUOTES, 'UTF-8');
+        else {
+            $html = $message;
+            $txt = strip_tags($html);
+            if (strlen($html) == strlen($txt)) {
+                $html = ''; // que msg text
+            }
+            // no html entity in txt.
+            $txt = html_entity_decode($txt, ENT_NOQUOTES, 'UTF-8');
+        }
     }
     // TODO: option pour que TXT si msg html, ou les deux comme ici par défaut.
     $m = new SimpleEmailServiceMessage();
