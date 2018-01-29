@@ -2,12 +2,12 @@
 
 /*
   Plugin Name: WP SES
-  Version: 0.7.21
-  Plugin URI: http://wp-ses.com
-  Description: Uses Amazon Simple Email Service instead of local mail for all outgoing WP emails.
-  Author: Sylvain Deaure
-  Author URI: http://www.blog-expert.fr
- * Text Domain: wpses
+  Version: 0.8
+  Plugin URI: https://wordpress.org/plugins/wp-ses/
+  Description: Uses Amazon SES for sending all site email
+  Author: Delicious Brains Inc
+  Author URI: https://deliciousbrains.com
+ * Text Domain: wp-ses
  * Domain Path: /
  */
 
@@ -50,7 +50,7 @@ require_once plugin_dir_path(__FILE__) . 'ses.class.0.8.6.php';
 
 function wpses_init()
 {
-    load_plugin_textdomain('wpses', false, basename(dirname(__FILE__)));
+    load_plugin_textdomain('wp-ses', false, basename(dirname(__FILE__)));
     wpses_admin_warnings();
 }
 
@@ -197,8 +197,12 @@ function wpses_options()
             wpses_log('Normal activation');
             wpses_update_option('wpses_options', $wpses_options);
             echo '<div id="message" class="updated fade">
-			<p>' . __('Plugin is activated and functionnal', 'wpses') . '</p>
+			<p>' . __('Sending emails through Amazon SES has been turned <strong>ON</strong>', 'wp-ses') . '</p>
 			</div>' . "\n";
+        } else {
+            echo '<div id="message" class="error notice">
+            <p>' . __('Could not turn ON sending emails through Amazon SES. Please resolve the issues below.', 'wp-ses') . '</p>
+            </div>' . "\n";
         }
         if (isset($_POST['force']) and 1 == $_POST['force']) {
             // bad hack to force plugin activation with IAM credentials
@@ -208,6 +212,9 @@ function wpses_options()
             $wpses_options['force'] = 1;
             wpses_log('Forced activation');
             wpses_update_option('wpses_options', $wpses_options);
+            echo '<div id="message" class="updated fade">
+            <p>' . __('Sending emails through Amazon SES has been forced <strong>ON</strong>', 'wp-ses') . '</p>
+            </div>' . "\n";
         }
     }
     if (!empty($_POST['deactivate'])) {
@@ -215,7 +222,7 @@ function wpses_options()
         wpses_log('Manual deactivation');
         wpses_update_option('wpses_options', $wpses_options);
         echo '<div id="message" class="updated fade">
-			<p>' . __('Plugin de-activated', 'wpses') . '</p>
+			<p>' . __('Sending emails through Amazon SES has been turned <strong>OFF</strong>', 'wp-ses') . '</p>
 			</div>' . "\n";
     }
     if (!empty($_POST['activatelogs'])) {
@@ -228,7 +235,7 @@ function wpses_options()
         } else {
             @ unlink(WP_PLUGIN_DIR . '/wp-ses/log/wpses.log');
             echo '<div id="message" class="updated fade">
-			<p>' . __('Logs activated', 'wpses') . '</p>
+			<p>' . __('Logging enabled', 'wp-ses') . '</p>
 			</div>' . "\n";
             $wpses_options['log'] = 1;
             wpses_update_option('wpses_options', $wpses_options);
@@ -240,7 +247,7 @@ function wpses_options()
         wpses_update_option('wpses_options', $wpses_options);
         @ unlink(WP_PLUGIN_DIR . '/wp-ses/log/wpses.log');
         echo '<div id="message" class="updated fade">
-	<p>' . __('Logs deactivated and cleared', 'wpses') . '</p>
+	<p>' . __('Logging disabled and logs cleared', 'wp-ses') . '</p>
 	</div>' . "\n";
     }
     if (!empty($_POST['viewlogs'])) {
@@ -249,7 +256,7 @@ function wpses_options()
             die();
         } else {
             echo '<div id="message" class="updated fade">
-	<p>' . __('No log file', 'wpses') . '</p>
+	<p>' . __('No log file', 'wp-ses') . '</p>
 	</div>' . "\n";
         }
     }
@@ -379,12 +386,12 @@ function wpses_admin_warnings()
         return;
     }
     $active = $wpses_options['active'];
-    if ($active <= 0) {
+    if ($active <= 0 && (!isset($_GET['page']) || 'wp-ses/wp-ses.php' !== $_GET['page'])) {
         function wpses_warning()
         {
             global $wpses_options;
-            echo "<div id='wpses-warning' class='updated fade'><p><strong>" . __("WP SES - Simple Email Service is not fully activated. Please check it's config: ", 'wpses') .
-            '<a href="options-general.php?page=wp-ses/wp-ses.php">' . __("Settings &rarr; WP SES", 'wpses') . '</a>.' . "</strong></p></div>";
+            echo "<div id='wpses-warning' class='updated fade'><p>" . __("<strong>WP SES</strong> &mdash; Some configuration is required before your site's emails will be sent through Amazon SES. ", 'wp-ses') .
+            '<a href="options-general.php?page=wp-ses/wp-ses.php">' . __("Settings &rarr; WP SES", 'wp-ses') . '</a>' . "</p></div>";
         }
 
         add_action('admin_notices', 'wpses_warning');
@@ -395,7 +402,7 @@ function wpses_admin_warnings()
 function wpses_admin_menu()
 {
     if (is_multisite()) {
-        add_submenu_page(
+        $hook_suffix = add_submenu_page(
             'settings.php',
             'wpses',
             __('WP SES', 'wpses'),
@@ -404,18 +411,31 @@ function wpses_admin_menu()
             'wpses_options'
         );
     } else {
-        add_options_page('wpses', __('WP SES', 'wpses'), 'manage_options', __FILE__, 'wpses_options');
+        $hook_suffix = add_options_page('wpses', __('WP SES', 'wpses'), 'manage_options', __FILE__, 'wpses_options');
     }
+    add_action('load-' . $hook_suffix, 'wpses_load_assets');
     
     // Quota and Stats
     if (!defined('WP_SES_HIDE_STATS') or (false == WP_SES_HIDE_STATS)) {
-        add_submenu_page('index.php', 'SES Stats', 'SES Stats', 'manage_options', 'wp-ses/ses-stats.php');
+        $hook_suffix = add_submenu_page('index.php', 'SES Stats', 'SES Stats', 'manage_options', 'wp-ses/ses-stats.php');
+        add_action('load-' . $hook_suffix, 'wpses_load_assets');
     }
 }
 
-function wpses_temp()
+function wpses_get_asset_url($asset)
 {
-    return '';
+    $plugin_dir_path    = plugin_dir_path(__FILE__);
+    $plugin_folder_name = basename($plugin_dir_path);
+    $plugins_url = trailingslashit(plugins_url($plugin_folder_name));
+    return $plugins_url . 'asset/' . ltrim($asset, '/');
+}
+
+function wpses_load_assets()
+{
+    $version            = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? time() : WPSES_VERSION;
+
+    $src = wpses_get_asset_url('css/styles.css');
+    wp_enqueue_style('wp-ses-styles', $src, array(), $version);
 }
 
 function wpses_from($mail_from_email)
@@ -479,7 +499,7 @@ function wpses_check_SES()
 /*
   function wpses_error_handler($level, $message, $file, $line, $context) {
   global $WPSESMSG;
-  $WPSESMSG = __('SES Error: ', 'wpses') . $message;
+  $WPSESMSG = __('SES Error: ', 'wp-ses') . $message;
   wpses_log("SES Error\t" . $message['Error']['Code'] . "\t" . $message['Error']['Message'] . "\t" . $message['Error']['RequestId']);
   return (true); //And prevent the PHP error handler from continuing
   }

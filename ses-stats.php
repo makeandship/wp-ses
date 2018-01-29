@@ -4,16 +4,12 @@
 // TODO: add chart
 
 if (!isset($wpses_options)) {
-    if (is_multisite()) {
-        $wpses_options = get_site_option('wpses_options');
-    } else {
-        $wpses_options = get_option('wpses_options');
-    }
+    $wpses_options = wpses_get_option('wpses_options');
 }
 
 if ($wpses_options['credentials_ok'] != 1) {
     $WPSESMSG = __('Amazon API credentials have not been checked.<br />Please go to settings -> WP SES and setup the plugin', 'wpses');
-    include(plugin_dir_path(__FILE__) . 'error.tmpl.php');
+    include('error.tmpl.php');
 }
 
 require_once plugin_dir_path(__FILE__) . 'ses.class.0.8.6.php';
