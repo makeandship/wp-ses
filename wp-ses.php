@@ -35,7 +35,11 @@ if (is_admin()) {
     // TODO : Ask before activate
     // include_once(WP_PLUGIN_DIR.'/wp-ses/sdrssw.php');
     add_action('init', 'wpses_init');
-    add_action('admin_menu', 'wpses_admin_menu');
+    if (is_multisite()) {
+        add_action('network_admin_menu', 'wpses_admin_menu');
+    } else {
+        add_action('admin_menu', 'wpses_admin_menu');
+    }
     register_activation_hook(__FILE__, 'wpses_install');
     register_deactivation_hook(__FILE__, 'wpses_uninstall');
 }
@@ -56,52 +60,28 @@ add_filter('wp_mail_from_name', 'wpses_from_name', 1);
 function wpses_install()
 {
     global $wpdb, $wpses_options;
-    if (is_multisite()) {
-        if (!get_site_option('wpses_options')) {
-            add_site_option('wpses_options', array(
-                'from_email' => '',
-                'return_path' => '',
-                'from_name' => 'WordPress',
-                'access_key' => '',
-                'secret_key' => '',
-                'endpoint' => 'email.us-east-1.amazonaws.com',
-                'credentials_ok' => 0,
-                'sender_ok' => 0,
-                'last_ses_check' => 0, // timestamp of last quota check
-                'force' => 0,
-                'log' => 0,
-                'active' => 1, // reset to 0 if not pluggable or config change.
-                'version' => '0' // Version of the db
-                    // TODO: garder liste des ids des demandes associ�es � chaque email.
-                    // afficher : email, id demande , valid� ?
-            ));
-            wpses_getoptions();
-            //$wpses_options = get_option('wpses_options');
-            @ mkdir(WP_PLUGIN_DIR . '/wp-ses/log/');
-        }
-    } else {
-        if (!get_option('wpses_options')) {
-            add_option('wpses_options', array(
-                'from_email' => '',
-                'return_path' => '',
-                'from_name' => 'WordPress',
-                'access_key' => '',
-                'secret_key' => '',
-                'endpoint' => 'email.us-east-1.amazonaws.com',
-                'credentials_ok' => 0,
-                'sender_ok' => 0,
-                'last_ses_check' => 0, // timestamp of last quota check
-                'force' => 0,
-                'log' => 0,
-                'active' => 1, // reset to 0 if not pluggable or config change.
-                'version' => '0' // Version of the db
-                    // TODO: garder liste des ids des demandes associ�es � chaque email.
-                    // afficher : email, id demande , valid� ?
-            ));
-            wpses_getoptions();
-            //$wpses_options = get_option('wpses_options');
-            @ mkdir(WP_PLUGIN_DIR . '/wp-ses/log/');
-        }
+    
+    if (!wpses_get_option('wpses_options')) {
+        wpses_add_option('wpses_options', array(
+            'from_email' => '',
+            'return_path' => '',
+            'from_name' => 'WordPress',
+            'access_key' => '',
+            'secret_key' => '',
+            'endpoint' => 'email.us-east-1.amazonaws.com',
+            'credentials_ok' => 0,
+            'sender_ok' => 0,
+            'last_ses_check' => 0, // timestamp of last quota check
+            'force' => 0,
+            'log' => 0,
+            'active' => 1, // reset to 0 if not pluggable or config change.
+            'version' => '0' // Version of the db
+                // TODO: garder liste des ids des demandes associ�es � chaque email.
+                // afficher : email, id demande , valid� ?
+        ));
+        wpses_getoptions();
+        //$wpses_options = get_option('wpses_options');
+        @ mkdir(WP_PLUGIN_DIR . '/wp-ses/log/');
     }
 }
 
@@ -118,7 +98,8 @@ function wpses_options()
     if (($wpses_options['access_key'] != '') and ($wpses_options['secret_key'] != '')) {
         $authorized = wpses_getverified();
     }
-    $senders = (array) get_option('wpses_senders');
+    $senders = (array) wpses_get_option('wpses_senders');
+    
     // ajouter dans senders les verified absents
     $updated = false;
     if ('' != $authorized) {
@@ -162,7 +143,7 @@ function wpses_options()
     }
 
     if ($updated) {
-        update_option('wpses_senders', $senders);
+        wpses_update_option('wpses_senders', $senders);
     }
 
     $wpses_options['sender_ok'] = 0;
@@ -173,18 +154,18 @@ function wpses_options()
             if ($wpses_options['credentials_ok'] == 0) {
                 $wpses_options['credentials_ok'] = 1;
                 wpses_log('Credentials ok');
-                update_option('wpses_options', $wpses_options);
+                wpses_update_option('wpses_options', $wpses_options);
             }
             if ($wpses_options['sender_ok'] == 0) {
                 $wpses_options['sender_ok'] = 1;
                 wpses_log('Sender Ok');
-                update_option('wpses_options', $wpses_options);
+                wpses_update_option('wpses_options', $wpses_options);
             }
         } else {
             //if ($senders[$wpses_options['from_email']][1] !== TRUE) { //
             //$wpses_options['sender_ok'] = 0;
             //wpses_log('Sender not OK');
-            //update_option('wpses_options', $wpses_options);
+            //wpses_update_option('wpses_options', $wpses_options);
         }
         //if (!isset($senders[$wpses_options['from_email']])) {
         if (0 == $wpses_options['sender_ok']) {
@@ -196,7 +177,7 @@ function wpses_options()
                 $wpses_options['sender_ok'] = 1;
                 wpses_log('Sender domain ok');
                 $wpses_options['credentials_ok'] = 1;
-                update_option('wpses_options', $wpses_options);
+                wpses_update_option('wpses_options', $wpses_options);
             } else {
                 //$senders[$wpses_options['from_email']] = array(-1, false);
             }
@@ -206,7 +187,7 @@ function wpses_options()
     if ((($wpses_options['sender_ok'] != 1) and ($wpses_options['force'] != 1)) or ($wpses_options['credentials_ok'] != 1)) {
         $wpses_options['active'] = 0;
         wpses_log('Deactivate sender_ok=' . $wpses_options['sender_ok'] . ' Force=' . $wpses_options['force'] . ' credentials_ok=' . $wpses_options['credentials_ok']);
-        update_option('wpses_options', $wpses_options);
+        wpses_update_option('wpses_options', $wpses_options);
     }
 
     if (!empty($_POST['activate'])) {
@@ -214,7 +195,7 @@ function wpses_options()
         if (($wpses_options['sender_ok'] == 1) and ($wpses_options['credentials_ok'] == 1)) {
             $wpses_options['active'] = 1;
             wpses_log('Normal activation');
-            update_option('wpses_options', $wpses_options);
+            wpses_update_option('wpses_options', $wpses_options);
             echo '<div id="message" class="updated fade">
 			<p>' . __('Plugin is activated and functionnal', 'wpses') . '</p>
 			</div>' . "\n";
@@ -226,13 +207,13 @@ function wpses_options()
             $wpses_options['active'] = 1;
             $wpses_options['force'] = 1;
             wpses_log('Forced activation');
-            update_option('wpses_options', $wpses_options);
+            wpses_update_option('wpses_options', $wpses_options);
         }
     }
     if (!empty($_POST['deactivate'])) {
         $wpses_options['active'] = 0;
         wpses_log('Manual deactivation');
-        update_option('wpses_options', $wpses_options);
+        wpses_update_option('wpses_options', $wpses_options);
         echo '<div id="message" class="updated fade">
 			<p>' . __('Plugin de-activated', 'wpses') . '</p>
 			</div>' . "\n";
@@ -250,13 +231,13 @@ function wpses_options()
 			<p>' . __('Logs activated', 'wpses') . '</p>
 			</div>' . "\n";
             $wpses_options['log'] = 1;
-            update_option('wpses_options', $wpses_options);
+            wpses_update_option('wpses_options', $wpses_options);
             wpses_log('Start Logging');
         }
     }
     if (!empty($_POST['deactivatelogs'])) {
         $wpses_options['log'] = 0;
-        update_option('wpses_options', $wpses_options);
+        wpses_update_option('wpses_options', $wpses_options);
         @ unlink(WP_PLUGIN_DIR . '/wp-ses/log/wpses.log');
         echo '<div id="message" class="updated fade">
 	<p>' . __('Logs deactivated and cleared', 'wpses') . '</p>
@@ -311,7 +292,7 @@ function wpses_options()
         }
         // TODO si credentials different, resetter credentials_ok
 
-        update_option('wpses_options', $wpses_options);
+        wpses_update_option('wpses_options', $wpses_options);
         echo '<div id="message" class="updated fade"><p>' . __('Settings updated', 'wpses') . '</p></div>' . "\n";
     }
     wpses_getoptions();
@@ -338,6 +319,33 @@ function wpses_options()
         }
     }
     include('admin.tmpl.php');
+}
+
+function wpses_add_option($option, $value)
+{
+    if (is_multisite()) {
+        add_site_option($option, $value);
+    } else {
+        add_option($option, $value);
+    }
+}
+
+function wpses_update_option($option, $value)
+{
+    if (is_multisite()) {
+        update_site_option($option, $value);
+    } else {
+        update_option($option, $value);
+    }
+}
+
+function wpses_get_option($option)
+{
+    if (is_multisite()) {
+        return get_site_option($option);
+    } else {
+        return get_option($option);
+    }
 }
 
 // TODO
@@ -386,11 +394,28 @@ function wpses_admin_warnings()
 
 function wpses_admin_menu()
 {
-    add_options_page('wpses', __('WP SES', 'wpses'), 'manage_options', __FILE__, 'wpses_options');
+    if (is_multisite()) {
+        add_submenu_page(
+            'settings.php',
+            'wpses',
+            __('WP SES', 'wpses'),
+            'manage_options',
+            'wpses',
+            'wpses_options'
+        );
+    } else {
+        add_options_page('wpses', __('WP SES', 'wpses'), 'manage_options', __FILE__, 'wpses_options');
+    }
+    
     // Quota and Stats
     if (!defined('WP_SES_HIDE_STATS') or (false == WP_SES_HIDE_STATS)) {
         add_submenu_page('index.php', 'SES Stats', 'SES Stats', 'manage_options', 'wp-ses/ses-stats.php');
     }
+}
+
+function wpses_temp()
+{
+    return '';
 }
 
 function wpses_from($mail_from_email)
@@ -475,7 +500,7 @@ function wpses_verify_sender_step1($mail)
     set_error_handler('wpses_error_handler');
     try {
         $rid = $SES->verifyEmailIdentity($mail);
-        $senders = get_option('wpses_senders');
+        $senders = wpses_get_option('wpses_senders');
         if ($rid <> '') {
             $senders[$mail] = array(
                 $rid['RequestId'],
@@ -517,7 +542,7 @@ function wpses_sender_confirmed()
 {
     global $wpses_options;
     if ($wpses_options['from_email'] != '') {
-        $senders = (array) get_option('wpses_senders');
+        $senders = (array) wpses_get_option('wpses_senders');
         if ($senders[$wpses_options['from_email']][1]) {
             // email matches
             return true;
@@ -725,11 +750,8 @@ function wpses_default_options($array, $value)
 function wpses_getoptions()
 {
     global $wpses_options;
-    if (is_multisite()) {
-        $wpses_options = get_site_option('wpses_options');
-    } else {
-        $wpses_options = get_option('wpses_options');
-    }
+    $wpses_options = wpses_get_option('wpses_options');
+    
     if (!is_array($wpses_options)) {
         $wpses_options = array();
     }

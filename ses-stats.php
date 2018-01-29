@@ -4,20 +4,24 @@
 // TODO: add chart
 
 if (!isset($wpses_options)) {
-    $wpses_options = get_option('wpses_options');
+    if (is_multisite()) {
+        $wpses_options = get_site_option('wpses_options');
+    } else {
+        $wpses_options = get_option('wpses_options');
+    }
 }
 
 if ($wpses_options['credentials_ok'] != 1) {
     $WPSESMSG = __('Amazon API credentials have not been checked.<br />Please go to settings -> WP SES and setup the plugin', 'wpses');
-    include ('error.tmpl.php');
+    include(plugin_dir_path(__FILE__) . 'error.tmpl.php');
 }
 
-require_once plugin_dir_path( __FILE__ ) . 'ses.class.0.8.6.php';
+require_once plugin_dir_path(__FILE__) . 'ses.class.0.8.6.php';
 $SES = new SimpleEmailService($wpses_options['access_key'], $wpses_options['secret_key'], $wpses_options['endpoint']);
 
 if (!is_object($SES)) {
     $WPSESMSG = __('Error initializing SES. Please check your settings.', 'wpses');
-    include ('error.tmpl.php');
+    include('error.tmpl.php');
 }
 
 $quota = $SES->getSendQuota();
@@ -32,13 +36,12 @@ $stats = $SES->getSendStatistics();
 usort($stats['SendDataPoints'], 'wpses_stsort');
 
 
-include ('stats.tmpl.php');
+include('stats.tmpl.php');
 
-function wpses_stsort($a, $b) {
+function wpses_stsort($a, $b)
+{
     if ($a['Timestamp'] < $b['Timestamp']) {
         return -1;
     }
     return 1;
 }
-
-?>
